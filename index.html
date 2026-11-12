@@ -696,6 +696,14 @@ function initPicker(){
   $('#vtU').addEventListener('click',()=>testVoice('u'));
 }
 if(synth){initPicker();pickVoices();try{synth.addEventListener('voiceschanged',pickVoices)}catch(e){synth.onvoiceschanged=pickVoices}}
+/* iOS/Safari e Chrome só liberam a voz depois de um toque do usuário: destrava no primeiro toque */
+let unlocked=false;
+function unlockVoice(){
+  if(!synth||unlocked)return;unlocked=true;
+  try{const u=new SpeechSynthesisUtterance(' ');u.volume=0;u.lang='pt-BR';synth.speak(u)}catch(e){}
+}
+['pointerdown','click','touchend'].forEach(n=>document.addEventListener(n,unlockVoice,{capture:true,passive:true}));
+function blocked(){const n=$('#voiceNote');if(n)n.textContent='O navegador bloqueou o áudio. Toque no botão de repetir (seta circular) dentro do RUN para ouvir.'}
 function stopVoice(){if(synth){try{synth.cancel()}catch(e){}}}
 function speak(text,who,mood){
   return new Promise(res=>{
@@ -708,7 +716,9 @@ function speak(text,who,mood){
       else{u.pitch=voices.same?1.5:1.1;u.rate=1.05}
       let done=false;const fin=()=>{if(done)return;done=true;clearTimeout(t);res()};
       const t=setTimeout(fin,4000+text.length*110);
-      u.onend=fin;u.onerror=fin;synth.speak(u);
+      u.onend=fin;u.onerror=ev=>{if(ev&&ev.error==='not-allowed')blocked();fin()};
+      try{synth.resume()}catch(e){}
+      setTimeout(()=>{try{synth.speak(u)}catch(e){fin()}},40);
     }catch(e){res()}
   });
 }
