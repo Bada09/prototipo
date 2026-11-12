@@ -698,16 +698,37 @@ function initPicker(){
 if(synth){initPicker();pickVoices();try{synth.addEventListener('voiceschanged',pickVoices)}catch(e){synth.onvoiceschanged=pickVoices}
   let tries=0;const iv=setInterval(()=>{tries++;if(voices.p||tries>20){clearInterval(iv);return}pickVoices()},300);}
 /* iOS/Safari e Chrome só liberam a voz depois de um toque do usuário: destrava no primeiro toque */
+let player=null;try{player=new Audio();player.preload='auto'}catch(e){}
+const SILENT='data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
 let unlocked=false;
 function unlockVoice(){
-  if(!synth||unlocked)return;unlocked=true;
-  try{const u=new SpeechSynthesisUtterance(' ');u.volume=0;u.lang='pt-BR';synth.speak(u)}catch(e){}
+  if(unlocked)return;unlocked=true;
+  if(player){try{player.src=SILENT;const pr=player.play();if(pr&&pr.catch)pr.catch(()=>{})}catch(e){}}
+  if(synth){try{const u=new SpeechSynthesisUtterance(' ');u.volume=0;u.lang='pt-BR';synth.speak(u)}catch(e){}}
 }
 ['click','touchend'].forEach(n=>document.addEventListener(n,unlockVoice,{capture:true,passive:true}));
 function blocked(){const n=$('#voiceNote');if(n)n.textContent='O navegador bloqueou o áudio. Toque no botão de repetir (seta circular) dentro do RUN para ouvir.';
   const st=$('#status',body);if(st&&S.screen==='run')st.textContent='Áudio bloqueado: toque em repetir (↻) para ouvir.'}
-function stopVoice(){if(synth){try{synth.cancel()}catch(e){}}}
-function speak(text,who,mood){
+function stopVoice(){
+  if(player){try{player.onended=player.onerror=null;player.pause()}catch(e){}}
+  if(synth){try{synth.cancel()}catch(e){}}
+}
+/* áudios gravados com a voz da OpenAI: audio/ia/*.mp3 (Ricardo) e audio/corretor/*.mp3 (colaborador) */
+function playClip(id){
+  return new Promise(res=>{
+    if(!player||!id){res(false);return}
+    let done=false;
+    const fin=ok=>{if(done)return;done=true;clearTimeout(t);player.onended=player.onerror=null;res(ok)};
+    const t=setTimeout(()=>{try{player.pause()}catch(e){}fin(false)},45000);
+    player.onended=()=>fin(true);player.onerror=()=>fin(false);
+    try{player.src='audio/'+id+'.mp3';const pr=player.play();if(pr&&pr.catch)pr.catch(()=>fin(false))}catch(e){fin(false)}
+  });
+}
+async function speak(text,who,mood,clip){
+  if(clip&&S.voiceOn){if(await playClip(clip))return}
+  return speakTTS(text,who,mood);
+}
+function speakTTS(text,who,mood){
   return new Promise(res=>{
     if(!synth||!S.voiceOn){setTimeout(res,who==='p'?Math.min(2400,700+text.length*12):450);return}
     try{
@@ -830,20 +851,20 @@ async function startRun(){
   S.run={step:0,good:0,mood:'desconfiado',answers:[],last:OPEN,done:false};
   render('run');
   setStatus('think');await wait(1000);if(id!==runId)return;
-  addMsg('p',OPEN);setStatus('speak');await speak(OPEN,'p','desconfiado');if(id!==runId)return;
+  S.run.lastClip='ia/abertura';addMsg('p',OPEN);setStatus('speak');await speak(OPEN,'p','desconfiado','ia/abertura');if(id!==runId)return;
   showChoices();
 }
-async function answer(good,text){
-  if(busy)return;busy=true;const id=runId,r=S.run,st=RUN[r.step];
+async function answer(good,text,fromMic){
+  if(busy)return;busy=true;const id=runId,r=S.run,st=RUN[r.step];const n=r.step+1,tag=good?'boa':'fraca';
   $('#choices',body).innerHTML='';
   addMsg('u',text);r.answers.push({good,text,step:r.step});
-  setStatus('listen');await speak(text,'u');if(id!==runId)return;
+  setStatus('listen');if(fromMic)await wait(300);else await speak(text,'u',null,'corretor/'+n+'_'+tag);if(id!==runId)return;
   if(good)r.good++;
   r.mood=good?(r.good>=2?'aberto':'hesitante'):'irritado';
   r.step++;updateRunUI();
   setStatus('think');await wait(1100);if(id!==runId)return;
-  const line=good?st.rGood:st.rWeak;r.last=line;
-  addMsg('p',line);setStatus('speak');await speak(line,'p',r.mood);if(id!==runId)return;
+  const line=good?st.rGood:st.rWeak;r.last=line;r.lastClip='ia/'+n+'_'+tag;
+  addMsg('p',line);setStatus('speak');await speak(line,'p',r.mood,r.lastClip);if(id!==runId)return;
   if(r.step<3)showChoices();
   else{setStatus('end');$('#choices',body).innerHTML=`<button class="pbtn" data-act="debrief">Ver debriefing</button>`;busy=false}
 }
@@ -856,7 +877,7 @@ function listen(){
   if(btn)btn.classList.add('rec');setStatus('rec');
   rec.onresult=e=>{got=true;const t=(e.results[0][0].transcript||'').trim();if(id!==runId||!t)return;
     const n=norm(t);const ok=st.keys.some(k=>n.includes(k));
-    answer(ok,t.charAt(0).toUpperCase()+t.slice(1))};
+    answer(ok,t.charAt(0).toUpperCase()+t.slice(1),true)};
   const fail=()=>{if(id!==runId)return;if(btn)btn.classList.remove('rec');if(!got&&!busy)setStatus('nohear')};
   rec.onerror=fail;rec.onend=fail;
   try{rec.start()}catch(e){fail()}
@@ -929,7 +950,7 @@ body.addEventListener('click',e=>{
   else if(a==='choice')answer(b.dataset.g==='1',b.textContent);
   else if(a==='mic')listen();
   else if(a==='voice'){S.voiceOn=!S.voiceOn;if(!S.voiceOn)stopVoice();b.setAttribute('aria-pressed',S.voiceOn);b.innerHTML=ic(S.voiceOn?'vol':'voloff')}
-  else if(a==='replay'){if(busy||!S.run)return;(async()=>{const id=runId;busy=true;const prev=$('#status',body).innerHTML;setStatus('speak');await speak(S.run.last,'p',S.run.mood);if(id!==runId)return;$('#status',body).innerHTML=prev;busy=false})()}
+  else if(a==='replay'){if(busy||!S.run)return;(async()=>{const id=runId;busy=true;const prev=$('#status',body).innerHTML;setStatus('speak');await speak(S.run.last,'p',S.run.mood,S.run.lastClip);if(id!==runId)return;$('#status',body).innerHTML=prev;busy=false})()}
 });
 $('#resetBtn').addEventListener('click',()=>{const v=S.voiceOn;S=fresh();S.voiceOn=v;go('home')});
 window.addEventListener('pagehide',stopVoice);
