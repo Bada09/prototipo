@@ -99,6 +99,14 @@ kbd{font:600 .75rem Inter,sans-serif;background:#fff;border:1px solid var(--line
 .steps-list strong{color:var(--ink);font-weight:600}
 .proto-actions{margin-top:22px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
 .phone-wrap{justify-self:center}
+.fsbar{display:none}
+#fullBtn{display:none}
+body.proto-full{overflow:hidden}
+body.proto-full #phoneWrap{position:fixed;inset:0;z-index:100;width:100%!important;height:100%!important;background:var(--bg);display:flex;flex-direction:column;opacity:1!important;transform:none!important}
+body.proto-full .fsbar{display:flex;align-items:center;justify-content:space-between;gap:8px;height:56px;flex:none;padding:0 10px 0 16px;background:#fff;border-bottom:1px solid var(--line);font:600 .9375rem "Space Grotesk",sans-serif}
+body.proto-full .phone{width:100%!important;height:auto!important;flex:1;min-height:0;border:0;border-radius:0;box-shadow:none;transform:none!important}
+body.proto-full .ph-status{display:none}
+@media (max-width:700px){#fullBtn{display:inline-flex}}
 .vpick{margin-top:18px;max-width:520px;background:#fff;border:1px solid var(--line);border-radius:14px}
 .vpick summary{min-height:48px;display:flex;align-items:center;padding:0 16px;font-weight:600;cursor:pointer;border-radius:14px}
 .vpick summary:hover{background:var(--pl)}
@@ -332,7 +340,7 @@ button.lv:hover{background:var(--pl)}
       <h1>Rhapsody: do treino ao hábito</h1>
       <p class="lead">Como transformar cada RUN em uma prática semanal: primeiro corrigindo a experiência, depois dando ao colaborador um motivo para voltar e ao gestor uma forma simples de puxar a equipe.</p>
       <div class="cover-cta">
-        <a class="btn" href="#s4">Testar o protótipo</a>
+        <a class="btn" href="#s4" id="tryBtn">Testar o protótipo</a>
         <a class="btn ghost" href="#s2">Começar pelo problema</a>
       </div>
       <p class="cover-meta">Modo apresentação: <kbd>↑</kbd> <kbd>↓</kbd> ou <kbd>PageUp</kbd> <kbd>PageDown</kbd> trocam de seção · <kbd>F</kbd> tela cheia</p>
@@ -393,6 +401,7 @@ button.lv:hover{background:var(--pl)}
         <li><b>5</b><span><strong>Resultado.</strong> Com nota 70 ou mais, o nível Ouro é desbloqueado e a equipe sobe no ranking.</span></li>
       </ol>
       <div class="proto-actions">
+        <button class="btn" id="fullBtn">Abrir em tela cheia</button>
         <button class="btn ghost" id="resetBtn">Reiniciar protótipo</button>
         <span class="sm muted" id="voiceNote"></span>
       </div>
@@ -408,6 +417,7 @@ button.lv:hover{background:var(--pl)}
       </details>
     </div>
     <div class="phone-wrap reveal" id="phoneWrap">
+      <div class="fsbar"><span>Protótipo Rhapsody</span><button class="btn ghost" id="fsExit" style="min-height:44px">Sair da tela cheia</button></div>
       <div class="phone" id="phone" role="region" aria-label="Protótipo do aplicativo Rhapsody">
         <div class="ph-status" aria-hidden="true"><span>9:41</span><i></i><span>5G</span></div>
         <div class="ph-body" id="phBody"></div>
@@ -922,6 +932,28 @@ function fitPhone(){
 }
 fitPhone();addEventListener('resize',fitPhone);
 
+/* ---------- PROTÓTIPO EM TELA CHEIA (celular) ---------- */
+const isMobile=()=>matchMedia('(max-width:700px)').matches;
+let nativeFS=false;
+function enterProto(){
+  document.body.classList.add('proto-full');
+  const el=document.documentElement,f=el.requestFullscreen||el.webkitRequestFullscreen;
+  nativeFS=false;
+  if(f){try{const r=f.call(el);nativeFS=true;if(r&&r.catch)r.catch(()=>{nativeFS=false})}catch(e){nativeFS=false}}
+  const m=$('#phBody .scr');if(m)m.scrollTop=0;
+}
+function exitProto(){
+  document.body.classList.remove('proto-full');
+  const d=document;
+  if(d.fullscreenElement||d.webkitFullscreenElement){try{(d.exitFullscreen||d.webkitExitFullscreen).call(d)}catch(e){}}
+}
+$('#tryBtn').addEventListener('click',e=>{if(isMobile()){e.preventDefault();$('#s4').scrollIntoView();enterProto()}});
+$('#fullBtn').addEventListener('click',enterProto);
+$('#fsExit').addEventListener('click',exitProto);
+['fullscreenchange','webkitfullscreenchange'].forEach(n=>document.addEventListener(n,()=>{
+  if(!(document.fullscreenElement||document.webkitFullscreenElement)&&nativeFS&&document.body.classList.contains('proto-full'))exitProto()}));
+addEventListener('resize',()=>{if(!isMobile()&&document.body.classList.contains('proto-full'))exitProto()});
+
 /* ---------- PAINEL DO GESTOR ---------- */
 $('#chForm').addEventListener('submit',e=>{
   e.preventDefault();
@@ -960,6 +992,7 @@ function toggleFS(){
 }
 $('#fsBtn').addEventListener('click',toggleFS);
 addEventListener('keydown',e=>{
+  if(document.body.classList.contains('proto-full')){if(e.key==='Escape')exitProto();return}
   if(e.ctrlKey||e.metaKey||e.altKey)return;
   const t=e.target,tag=t&&t.tagName;
   if(tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA'||(t&&t.isContentEditable))return;
