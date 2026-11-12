@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rhapsody: do treino ao hábito</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* ARQUITETURA
+   - 10 seções (#s1..#s10) com navegação fixa, progresso e atalhos de teclado.
+   - Protótipo: um objeto de estado S, telas renderizadas por funções (home, prerun, run, debrief, result)
+     dentro de #phBody, com delegação de eventos via data-act.
+   - Voz: speechSynthesis (persona e colaborador) e SpeechRecognition opcional, ambos com fallback silencioso.
+*/
+:root{
+  --p:#6B3FD4; --pd:#5631B4; --pl:#EEE8FB; --ink:#1C1530; --bg:#F7F5FC; --card:#FFFFFF;
+  --or:#C2410C; --orl:#FFEDD5; --mut:#5B5470; --line:#E4DEF3; --ok:#166534; --okl:#DCFCE7;
+  --r:16px; --sh:0 1px 2px rgba(28,21,48,.05),0 8px 24px rgba(28,21,48,.06);
+  --navh:60px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:var(--bg);color:var(--ink);font:400 16px/1.55 Inter,system-ui,sans-serif;-webkit-font-smoothing:antialiased}
+h1,h2,h3,h4{font-family:"Space Grotesk",Inter,sans-serif;line-height:1.15;margin:0;letter-spacing:-.01em}
+h1{font-size:clamp(2.2rem,5.2vw,4rem);font-weight:700}
+h2{font-size:clamp(1.7rem,3.4vw,2.6rem);font-weight:700}
+h3{font-size:1.1rem;font-weight:600}
+p{margin:0}
+button,select,input{font:inherit;color:inherit}
+button{cursor:pointer}
+:focus-visible{outline:3px solid var(--p);outline-offset:2px}
+.ic{flex:none;display:block}
+.muted{color:var(--mut)}
+.sm{font-size:.875rem}
+
+/* NAV */
+.nav{position:fixed;inset:0 0 auto 0;height:var(--navh);background:rgba(247,245,252,.94);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);z-index:50;display:flex;align-items:center;gap:16px;padding:0 20px}
+.brand{font:700 1.15rem "Space Grotesk",sans-serif;color:var(--ink);text-decoration:none;display:flex;align-items:center;gap:8px;min-height:44px}
+.brand i{width:12px;height:12px;border-radius:50%;background:var(--p);display:block}
+.nav-links{display:flex;gap:2px;margin-left:auto;list-style:none;padding:0;margin-top:0;margin-bottom:0}
+.nav-links a{display:flex;align-items:center;min-height:44px;padding:0 9px;border-radius:10px;font-size:.8125rem;font-weight:500;color:var(--mut);text-decoration:none}
+.nav-links a:hover{color:var(--ink);background:var(--pl)}
+.nav-links a.on{color:var(--p);background:var(--pl);font-weight:600}
+.nav-count{font:600 .875rem "Space Grotesk",sans-serif;color:var(--mut);font-variant-numeric:tabular-nums;white-space:nowrap}
+.iconbtn{width:44px;height:44px;border-radius:12px;border:1px solid var(--line);background:#fff;display:grid;place-items:center;color:var(--ink)}
+.iconbtn:hover{background:var(--pl)}
+.progress{position:absolute;left:0;right:0;bottom:-1px;height:3px;background:transparent}
+.progress i{display:block;height:100%;width:0;background:var(--p);transition:width .15s linear}
+@media (max-width:1180px){.nav-links{display:none}.nav-count{margin-left:auto}}
+
+/* SEÇÕES */
+section{min-height:100vh;padding:calc(var(--navh) + 56px) 24px 72px;display:flex;align-items:center;scroll-margin-top:0}
+.wrap{width:100%;max-width:1160px;margin:0 auto}
+.eyebrow{font:600 .8125rem "Space Grotesk",sans-serif;letter-spacing:.12em;text-transform:uppercase;color:var(--p);margin-bottom:14px}
+.lead{font-size:1.125rem;color:var(--mut);max-width:62ch;margin-top:16px}
+.head{margin-bottom:40px}
+.grid{display:grid;gap:18px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:22px;box-shadow:var(--sh)}
+.card h3{margin-bottom:8px}
+.card p{color:var(--mut);font-size:.9375rem}
+.icbox{width:44px;height:44px;border-radius:12px;background:var(--pl);color:var(--p);display:grid;place-items:center;margin-bottom:16px}
+.tag{display:inline-flex;align-items:center;gap:6px;font-size:.75rem;font-weight:600;padding:4px 10px;border-radius:999px;background:var(--pl);color:var(--pd)}
+.tag.warn{background:var(--orl);color:var(--or)}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:48px;padding:0 22px;border-radius:14px;border:0;background:var(--p);color:#fff;font-weight:600;text-decoration:none}
+.btn:hover{background:var(--pd)}
+.btn.ghost{background:transparent;color:var(--ink);border:1.5px solid var(--line)}
+.btn.ghost:hover{background:var(--pl)}
+.btn.light{background:#fff;color:var(--ink)}
+.btn.light:hover{background:var(--pl)}
+.js .reveal{opacity:0;transform:translateY(18px);transition:opacity .6s ease,transform .6s ease}
+.js .reveal.in{opacity:1;transform:none}
+
+/* 1 CAPA */
+.cover{display:grid;grid-template-columns:1.15fr .85fr;gap:48px;align-items:center}
+.cover .lead{font-size:1.25rem}
+.cover-cta{display:flex;gap:12px;flex-wrap:wrap;margin-top:32px}
+.cover-meta{margin-top:36px;font-size:.875rem;color:var(--mut);display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+kbd{font:600 .75rem Inter,sans-serif;background:#fff;border:1px solid var(--line);border-bottom-width:2px;border-radius:6px;padding:2px 7px;color:var(--ink)}
+.cover-phone{justify-self:center;position:relative}
+.cover-phone::before{content:"";position:absolute;inset:8% -14% 8% -14%;background:var(--pl);border-radius:40px;z-index:0}
+.mini{position:relative;z-index:1;width:250px;height:541px}
+.mini .phone{transform:scale(.641);transform-origin:top left}
+
+/* 2 PROBLEMA */
+.g5{grid-template-columns:repeat(5,1fr)}
+.g5 .card{padding:20px}
+.src{font-size:.75rem;color:var(--mut);margin-top:12px;font-weight:500}
+/* 3 PRINCÍPIOS */
+.g4{grid-template-columns:repeat(4,1fr)}
+.num{font:700 2rem "Space Grotesk",sans-serif;color:var(--p);margin-bottom:14px;display:block}
+/* 4 PROTÓTIPO */
+.proto{display:grid;grid-template-columns:1fr auto;gap:56px;align-items:center}
+.steps-list{list-style:none;padding:0;margin:28px 0 0;display:grid;gap:10px;max-width:520px}
+.steps-list li{display:flex;gap:14px;align-items:flex-start;background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.steps-list b{font-family:"Space Grotesk",sans-serif;color:var(--p);min-width:22px}
+.steps-list span{font-size:.9375rem;color:var(--mut)}
+.steps-list strong{color:var(--ink);font-weight:600}
+.proto-actions{margin-top:22px;display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.phone-wrap{justify-self:center}
+.vpick{margin-top:18px;max-width:520px;background:#fff;border:1px solid var(--line);border-radius:14px}
+.vpick summary{min-height:48px;display:flex;align-items:center;padding:0 16px;font-weight:600;cursor:pointer;border-radius:14px}
+.vpick summary:hover{background:var(--pl)}
+.vpick-in{padding:4px 16px 16px;display:grid;gap:14px}
+.vrow{display:grid;gap:6px}
+.vrow label{font-size:.8125rem;font-weight:600}
+.vrow .line{display:flex;gap:8px}
+.vrow select{flex:1;min-width:0;min-height:44px;border-radius:12px;border:1px solid var(--line);background:#fff;padding:0 10px}
+.vrow button{min-height:44px;padding:0 14px;border-radius:12px;border:1.5px solid var(--line);background:#fff;font-weight:600}
+.vrow button:hover{background:var(--pl)}
+
+/* CELULAR */
+.phone{width:390px;height:844px;background:var(--bg);border:10px solid var(--ink);border-radius:52px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 30px 60px rgba(28,21,48,.22);transform-origin:top left;position:relative;font-size:15px}
+.ph-status{height:42px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:6px 28px 0;font:600 .8125rem Inter,sans-serif}
+.ph-status i{width:92px;height:24px;border-radius:14px;background:var(--ink);display:block}
+.ph-body{flex:1;min-height:0;position:relative}
+.scr{position:absolute;inset:0;overflow-y:auto;padding:10px 18px 24px;animation:scrIn .28s ease both}
+@keyframes scrIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:none}}
+.scr h3{font-size:1.25rem}
+.scr h4{font-size:.9375rem;font-weight:600;margin:22px 0 10px}
+.pbtn{width:100%;min-height:52px;border-radius:15px;border:0;background:var(--p);color:#fff;font-weight:600;display:flex;align-items:center;justify-content:center;gap:8px;padding:0 16px}
+.pbtn:hover{background:var(--pd)}
+.pbtn.sec{background:#fff;color:var(--ink);border:1.5px solid var(--line)}
+.pbtn.sec:hover{background:var(--pl)}
+.pic{width:52px;height:52px;border-radius:14px;border:1px solid var(--line);background:#fff;display:grid;place-items:center;flex:none;color:var(--ink)}
+.pic:hover{background:var(--pl)}
+.pic[aria-pressed="false"]{color:var(--mut);background:var(--bg)}
+.pic.rec{background:var(--orl);color:var(--or);border-color:var(--or)}
+.pcard{background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px}
+/* home */
+.h-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.streak{display:flex;align-items:center;gap:6px;background:var(--orl);color:var(--or);font-weight:700;font-size:.8125rem;padding:8px 12px;border-radius:999px}
+.xp-row{display:flex;justify-content:space-between;font-size:.8125rem;font-weight:600;margin-bottom:8px}
+.xp-row span:last-child{color:var(--mut);font-weight:500}
+.bar{height:10px;background:var(--pl);border-radius:99px;overflow:hidden}
+.bar i{display:block;height:100%;background:var(--p);border-radius:99px;transition:width .8s ease}
+.dark{background:var(--ink);color:#fff;border-radius:18px;padding:18px;margin-top:14px}
+.dark .k{font-size:.6875rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:#C9B8F5}
+.dark h3{font-size:1.0625rem;margin:8px 0 4px}
+.dark p{font-size:.8125rem;color:#D9D3EA;margin-bottom:14px}
+.dark .pbtn{background:#fff;color:var(--ink)}
+.dark .pbtn:hover{background:var(--pl)}
+.levels{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.lv{display:flex;align-items:center;gap:12px;width:100%;min-height:60px;padding:10px 14px;background:#fff;border:1px solid var(--line);border-radius:15px;text-align:left}
+button.lv:hover{background:var(--pl)}
+.lv.cur{border:2px solid var(--p)}
+.lv.locked{background:var(--bg);color:var(--mut)}
+.medal{width:34px;height:34px;border-radius:50%;display:grid;place-items:center;color:#fff;flex:none}
+.medal.b{background:#8C5226}.medal.s{background:#6B7186}.medal.g{background:#946A00}
+.lv.locked .medal{background:#BDB7CC}
+.lv div{flex:1}
+.lv strong{display:block;font-size:.9375rem}
+.lv small{font-size:.75rem;color:var(--mut)}
+.lv .st{font-size:.75rem;font-weight:600;color:var(--p);display:flex;align-items:center;gap:4px}
+.lv .st.done{color:var(--ok)}
+.lv.locked .st{color:var(--mut)}
+.radar text{font:500 11px Inter,sans-serif;fill:var(--mut)}
+.legend{display:flex;gap:16px;justify-content:center;font-size:.75rem;color:var(--mut);margin-top:4px}
+.legend span{display:flex;align-items:center;gap:6px}
+.legend i{width:18px;height:0;border-top:2px dashed #8E86A6;display:block}
+.legend i.now{border-top:3px solid var(--p)}
+/* topo de tela */
+.topbar{display:flex;align-items:center;gap:10px;margin-bottom:12px}
+.topbar .t{flex:1;font:600 1rem "Space Grotesk",sans-serif}
+/* pré-run */
+.persona{display:flex;gap:14px;align-items:center}
+.ava{width:56px;height:56px;border-radius:50%;background:var(--ink);color:#fff;display:grid;place-items:center;font:600 1.05rem "Space Grotesk",sans-serif;flex:none}
+.ava.sm{width:40px;height:40px;font-size:.8125rem}
+.mood{display:inline-flex;align-items:center;gap:6px;font-size:.75rem;font-weight:700;padding:5px 11px;border-radius:999px;transition:background .4s,color .4s}
+.mood::before{content:"";width:8px;height:8px;border-radius:50%;background:currentColor}
+.m-desconfiado{background:#E6E3EE;color:#1C1530}
+.m-hesitante{background:var(--pl);color:var(--pd)}
+.m-aberto{background:var(--okl);color:var(--ok)}
+.m-irritado{background:var(--orl);color:var(--or)}
+.lbl{font-size:.6875rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--mut);margin-bottom:6px}
+.chips{display:flex;flex-wrap:wrap;gap:6px}
+.chip{font-size:.75rem;font-weight:600;background:var(--pl);color:var(--pd);padding:6px 11px;border-radius:999px}
+.tip{background:var(--pl);border-radius:14px;padding:14px;font-size:.875rem;display:flex;gap:10px;color:var(--ink)}
+.tip .ic{color:var(--p);margin-top:2px}
+.stack{display:grid;gap:12px}
+/* run */
+.run{display:flex;flex-direction:column;padding:6px 14px 14px;overflow:hidden}
+.run-head{display:flex;align-items:center;gap:8px;flex:none}
+.run-head .who{flex:1;min-width:0}
+.run-head .who strong{display:block;font-size:.875rem;margin-bottom:3px}
+.stepbar{display:flex;align-items:center;gap:6px;margin:10px 2px 8px;flex:none}
+.stepbar i{flex:1;height:6px;border-radius:99px;background:var(--line);transition:background .4s}
+.stepbar i.on{background:var(--p)}
+.stepbar span{font-size:.6875rem;font-weight:600;color:var(--mut);margin-left:6px;white-space:nowrap}
+.msgs{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:6px 2px}
+.msg{max-width:84%;padding:11px 14px;border-radius:18px;font-size:.875rem;line-height:1.45;animation:scrIn .25s ease both}
+.msg.p{background:#fff;border:1px solid var(--line);border-bottom-left-radius:6px;align-self:flex-start}
+.msg.u{background:var(--p);color:#fff;border-bottom-right-radius:6px;align-self:flex-end}
+.status{height:30px;flex:none;display:flex;align-items:center;gap:8px;font-size:.75rem;font-weight:600;color:var(--mut);padding:0 4px}
+.dots{display:inline-flex;gap:4px}
+.dots i{width:6px;height:6px;border-radius:50%;background:var(--p);animation:dot 1s infinite ease-in-out}
+.dots i:nth-child(2){animation-delay:.15s}.dots i:nth-child(3){animation-delay:.3s}
+@keyframes dot{0%,80%,100%{opacity:.25;transform:translateY(0)}40%{opacity:1;transform:translateY(-3px)}}
+.wave{display:inline-flex;gap:3px;align-items:center;height:16px}
+.wave i{width:3px;height:16px;border-radius:2px;background:var(--p);animation:wv .9s infinite ease-in-out;transform-origin:center}
+.wave i:nth-child(2){animation-delay:.1s}.wave i:nth-child(3){animation-delay:.2s}.wave i:nth-child(4){animation-delay:.3s}.wave i:nth-child(5){animation-delay:.4s}
+@keyframes wv{0%,100%{transform:scaleY(.3)}50%{transform:scaleY(1)}}
+.choices{flex:none;display:grid;gap:8px}
+.choice{width:100%;min-height:52px;text-align:left;background:#fff;border:1.5px solid var(--line);border-radius:15px;padding:11px 14px;font-size:.8125rem;line-height:1.4}
+.choice:hover{border-color:var(--p);background:var(--pl)}
+.microw{display:flex;align-items:center;gap:10px;font-size:.75rem;color:var(--mut)}
+/* debriefing */
+.ringbox{display:flex;align-items:center;gap:16px}
+.ring{position:relative;width:112px;height:112px;flex:none}
+.ring svg{transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:10}
+.ring .tr{stroke:var(--pl)}
+.ring .fg{stroke:var(--p);stroke-linecap:round;transition:stroke-dashoffset 1s ease}
+.ring b{position:absolute;inset:0;display:grid;place-items:center;font:700 1.9rem "Space Grotesk",sans-serif}
+.xpg{display:inline-block;margin-top:8px;font-size:.8125rem;font-weight:700;color:var(--pd);background:var(--pl);padding:5px 11px;border-radius:999px}
+.blk h5{font:600 .9375rem "Space Grotesk",sans-serif;margin:0 0 8px;display:flex;align-items:center;gap:8px}
+.blk h5 .ic{color:var(--p)}
+.blk ul{margin:0;padding:0;list-style:none;display:grid;gap:8px}
+.blk li{display:flex;gap:8px;font-size:.875rem}
+.blk li .ic{color:var(--ok);margin-top:2px}
+.blk p{font-size:.875rem}
+.quote{background:var(--ink);color:#fff;border-radius:16px;padding:16px}
+.quote h5{color:#C9B8F5}
+.quote h5 .ic{color:#C9B8F5}
+.quote blockquote{margin:0;font-size:.9375rem;line-height:1.5}
+/* resultado */
+.res{display:flex;flex-direction:column;align-items:center;text-align:center;padding-top:28px}
+.bigmedal{width:120px;height:120px;border-radius:50%;background:#946A00;color:#fff;display:grid;place-items:center;position:relative;margin:8px 0 22px}
+.bigmedal::before,.bigmedal::after{content:"";position:absolute;inset:-10px;border-radius:50%;border:2px solid #946A00;opacity:0;animation:pulse 2.4s ease-out infinite}
+.bigmedal::after{animation-delay:1.2s}
+@keyframes pulse{0%{transform:scale(.9);opacity:.5}100%{transform:scale(1.35);opacity:0}}
+.bigmedal.miss{background:var(--pl);color:var(--p)}
+.bigmedal.miss::before,.bigmedal.miss::after{display:none}
+.res p{color:var(--mut);margin:8px 0 20px;font-size:.9375rem}
+.rank{width:100%;position:relative;height:186px;margin-bottom:18px;text-align:left}
+.rank .row{position:absolute;left:0;right:0;height:54px;display:flex;align-items:center;gap:12px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:0 14px;font-size:.875rem;font-weight:500;transition:transform .9s cubic-bezier(.3,.8,.3,1)}
+.rank .row.me{border:2px solid var(--p);font-weight:700}
+.rank .row b{font-family:"Space Grotesk",sans-serif;color:var(--mut);width:22px}
+.rank .row .up{margin-left:auto;color:var(--ok);display:flex;align-items:center;gap:4px;font-size:.75rem;font-weight:700}
+.res .stack{width:100%}
+
+/* 5 GESTOR */
+.dash{background:#fff;border:1px solid var(--line);border-radius:20px;box-shadow:var(--sh);padding:24px}
+.dash-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px}
+.dash-head h3{font-size:1.2rem}
+.kpis{grid-template-columns:repeat(4,1fr);margin-bottom:18px}
+.kpi{background:var(--bg);border-radius:14px;padding:18px}
+.kpi b{font:700 1.9rem "Space Grotesk",sans-serif;display:block}
+.kpi span{font-size:.8125rem;color:var(--mut)}
+.dash-grid{grid-template-columns:1fr 1.15fr 1.15fr;align-items:start}
+.panel{border:1px solid var(--line);border-radius:14px;padding:18px}
+.panel h4{font-size:1rem;margin-bottom:4px}
+.panel>p{font-size:.8125rem;color:var(--mut);margin-bottom:14px}
+.panel.darkp{background:var(--ink);color:#fff;border-color:var(--ink)}
+.panel.darkp>p{color:#D9D3EA}
+.field{display:grid;gap:6px;margin-bottom:12px}
+.field label{font-size:.75rem;font-weight:600;color:#D9D3EA}
+.field select,.field input{min-height:44px;border-radius:12px;border:1px solid #4A4163;background:#2A2142;color:#fff;padding:0 12px;width:100%;color-scheme:dark}
+.toast{font-size:.8125rem;margin-top:12px;color:#C9F2D6;min-height:1.3em}
+.hbar{display:grid;grid-template-columns:118px 1fr 56px;gap:10px;align-items:center;margin-bottom:12px;font-size:.8125rem}
+.hbar .track{height:14px;background:var(--pl);border-radius:99px;overflow:hidden}
+.hbar .track i{display:block;height:100%;background:var(--p);border-radius:99px;width:0;transition:width 1s ease}
+.hbar .track i.att{background:var(--or)}
+.hbar .v{color:var(--mut);text-align:right;font-variant-numeric:tabular-nums}
+.note{font-size:.75rem;color:var(--mut);margin-top:6px}
+/* 6 MECÂNICAS */
+.g7{grid-template-columns:repeat(4,1fr)}
+.mech dl{margin:0;display:grid;gap:10px}
+.mech dt{font-size:.6875rem;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--p)}
+.mech dd{margin:2px 0 0;font-size:.875rem;color:var(--mut)}
+/* 7 CLIENTES */
+.g3{grid-template-columns:repeat(3,1fr)}
+.cli ul{margin:14px 0 0;padding:0;list-style:none;display:grid;gap:10px}
+.cli li{display:flex;gap:10px;font-size:.9375rem;color:var(--mut)}
+.cli li .ic{color:var(--p);margin-top:3px}
+.cli .sub{font-size:.8125rem;font-weight:600;color:var(--p);margin-bottom:4px}
+/* 8 MÉTRICAS */
+.metric b{font:700 2.4rem "Space Grotesk",sans-serif;color:var(--p);display:block;margin-bottom:6px}
+/* 9 ROADMAP */
+.road{display:grid;grid-template-columns:repeat(3,1fr);gap:18px;position:relative;padding-top:34px}
+.road::before{content:"";position:absolute;left:0;right:0;top:11px;height:2px;background:var(--line)}
+.phase{position:relative}
+.phase::before{content:"";position:absolute;top:-34px;left:22px;width:24px;height:24px;border-radius:50%;background:var(--p);border:5px solid var(--bg)}
+.phase:nth-child(2)::before{background:#9B7BE4}.phase:nth-child(3)::before{background:#C5B3F0}
+.phase ul{margin:12px 0 14px;padding-left:18px;color:var(--mut);font-size:.9375rem;display:grid;gap:6px}
+.phase .exit{font-size:.8125rem;color:var(--mut);border-top:1px solid var(--line);padding-top:12px}
+/* 10 FIM */
+.end{background:var(--ink);color:#fff}
+.end .eyebrow{color:#C9B8F5}
+.end .lead{color:#D9D3EA}
+.end-list{list-style:none;padding:0;margin:32px 0;display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+.end-list li{border:1px solid #3B3254;border-radius:16px;padding:20px;font-size:.9375rem;color:#D9D3EA}
+.end-list b{display:block;color:#fff;font-family:"Space Grotesk",sans-serif;margin-bottom:6px}
+
+@media (max-width:1000px){
+  .g5,.g4,.g7,.g3,.kpis{grid-template-columns:repeat(2,1fr)}
+  .dash-grid,.cover,.proto,.road,.end-list{grid-template-columns:1fr}
+  .road::before,.phase::before{display:none}.road{padding-top:0}
+  section{align-items:flex-start;padding-top:calc(var(--navh) + 36px)}
+  .proto{gap:32px}
+}
+@media (max-width:600px){
+  .g5,.g4,.g7,.g3{grid-template-columns:1fr}
+  section{padding-left:16px;padding-right:16px}
+  .hbar{grid-template-columns:96px 1fr 48px}
+  .dash{padding:16px}
+}
+@media (prefers-reduced-motion:reduce){
+  html{scroll-behavior:auto}
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .js .reveal{opacity:1;transform:none}
+}
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <a class="brand" href="#s1"><i></i>Rhapsody</a>
+  <ul class="nav-links" id="navLinks"></ul>
+  <span class="nav-count" id="navCount" aria-live="off">01 / 10</span>
+  <button class="iconbtn" id="fsBtn" aria-label="Alternar tela cheia (tecla F)"><span data-ic="expand"></span></button>
+  <div class="progress" aria-hidden="true"><i id="progBar"></i></div>
+</header>
+
+<main>
+<!-- 1 CAPA -->
+<section id="s1" data-nav="Capa">
+  <div class="wrap cover">
+    <div class="reveal">
+      <p class="eyebrow">Proposta de UX e gamificação</p>
+      <h1>Rhapsody: do treino ao hábito</h1>
+      <p class="lead">Como transformar cada RUN em uma prática semanal: primeiro corrigindo a experiência, depois dando ao colaborador um motivo para voltar e ao gestor uma forma simples de puxar a equipe.</p>
+      <div class="cover-cta">
+        <a class="btn" href="#s4">Testar o protótipo</a>
+        <a class="btn ghost" href="#s2">Começar pelo problema</a>
+      </div>
+      <p class="cover-meta">Modo apresentação: <kbd>↑</kbd> <kbd>↓</kbd> ou <kbd>PageUp</kbd> <kbd>PageDown</kbd> trocam de seção · <kbd>F</kbd> tela cheia</p>
+    </div>
+    <div class="cover-phone reveal" aria-hidden="true">
+      <div class="mini"><div class="phone"><div class="ph-status"><span>9:41</span><i></i><span>5G</span></div><div class="ph-body"><div class="scr" id="coverScr" inert style="overflow:hidden"></div></div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- 2 PROBLEMA -->
+<section id="s2" data-nav="Problema">
+  <div class="wrap">
+    <div class="head reveal">
+      <p class="eyebrow">O problema</p>
+      <h2>O que os pilotos nos disseram</h2>
+      <p class="lead">Cinco dores levantadas com corretores da MetLife e equipes do Fairmont. Nenhuma delas se resolve com pontos e medalhas. Todas precisam estar resolvidas antes.</p>
+    </div>
+    <div class="grid g5">
+      <article class="card reveal"><div class="icbox"><span data-ic="clock"></span></div><h3>Voz lenta e pouco natural</h3><p>A latência quebra o ritmo do roleplay, e a comparação com o ChatGPT é imediata.</p></article>
+      <article class="card reveal"><div class="icbox"><span data-ic="swap"></span></div><h3>Persona que troca</h3><p>No meio do debriefing, a persona muda. O colaborador perde a confiança no feedback.</p></article>
+      <article class="card reveal"><div class="icbox"><span data-ic="text"></span></div><h3>Debriefing em texto corrido</h3><p>Difícil de ler no celular. O cliente pediu uma estrutura em blocos.</p></article>
+      <article class="card reveal"><div class="icbox"><span data-ic="layers"></span></div><h3>Sem níveis de dificuldade</h3><p>O cliente pediu personas com graus de dificuldade para sustentar a progressão.</p></article>
+      <article class="card reveal"><div class="icbox"><span data-ic="alert"></span></div><h3>Login e travamentos</h3><p>Problemas de acesso e instabilidade no app interrompem a sessão antes de começar.</p></article>
+    </div>
+    <p class="src reveal">Fonte: retornos dos pilotos MetLife (corretores de seguros) e Fairmont (hotelaria).</p>
+  </div>
+</section>
+
+<!-- 3 PRINCÍPIOS -->
+<section id="s3" data-nav="Princípios">
+  <div class="wrap">
+    <div class="head reveal">
+      <p class="eyebrow">Princípios</p>
+      <h2>Quatro decisões que orientam a proposta</h2>
+    </div>
+    <div class="grid g4">
+      <article class="card reveal"><span class="num">01</span><h3>Corrigir antes de gamificar</h3><p>Gamificação sobre uma experiência com atrito amplifica o atrito. Voz, persona, debriefing e login vêm primeiro.</p></article>
+      <article class="card reveal"><span class="num">02</span><h3>Progresso pessoal antes de competição</h3><p>O colaborador se compara com quem ele era no início do mês. A comparação com colegas vem depois, e só por equipe.</p></article>
+      <article class="card reveal"><span class="num">03</span><h3>Gestor engaja sem expor ninguém</h3><p>O gestor lança desafios e enxerga a equipe como um todo. Não há ranking individual.</p></article>
+      <article class="card reveal"><span class="num">04</span><h3>Sessões curtas, voz em primeiro lugar</h3><p>Um RUN cabe entre dois atendimentos: poucos minutos, pouca leitura, conversa falada.</p></article>
+    </div>
+  </div>
+</section>
+
+<!-- 4 PROTÓTIPO -->
+<section id="s4" data-nav="Protótipo">
+  <div class="wrap proto">
+    <div class="reveal">
+      <p class="eyebrow">Protótipo interativo</p>
+      <h2>Um RUN completo, do desafio à conquista</h2>
+      <p class="lead">O celular ao lado funciona. Faça o RUN com Ricardo e veja a home mudar depois do resultado.</p>
+      <ol class="steps-list">
+        <li><b>1</b><span><strong>Home.</strong> Streak semanal, XP, desafio do gestor, níveis do Use Case e radar de competências.</span></li>
+        <li><b>2</b><span><strong>Pré-RUN.</strong> Quem é a persona, qual é o humor inicial e o que será avaliado.</span></li>
+        <li><b>3</b><span><strong>RUN com voz.</strong> O humor de Ricardo reage a cada resposta. O indicador "pensando" disfarça a latência.</span></li>
+        <li><b>4</b><span><strong>Debriefing em blocos.</strong> Nota, pontos fortes, um ponto de melhoria e o seu melhor momento.</span></li>
+        <li><b>5</b><span><strong>Resultado.</strong> Com nota 70 ou mais, o nível Ouro é desbloqueado e a equipe sobe no ranking.</span></li>
+      </ol>
+      <div class="proto-actions">
+        <button class="btn ghost" id="resetBtn">Reiniciar protótipo</button>
+        <span class="sm muted" id="voiceNote"></span>
+      </div>
+      <details class="vpick" id="vpick">
+        <summary>Escolher as vozes</summary>
+        <div class="vpick-in">
+          <div class="vrow"><label for="vsP">Voz de Ricardo (persona)</label>
+            <div class="line"><select id="vsP"></select><button type="button" id="vtP">Testar</button></div></div>
+          <div class="vrow"><label for="vsU">Voz do colaborador</label>
+            <div class="line"><select id="vsU"></select><button type="button" id="vtU">Testar</button></div></div>
+          <p class="sm muted" id="vHelp">A lista mostra as vozes em português disponíveis neste navegador. A escolha fica salva neste computador.</p>
+        </div>
+      </details>
+    </div>
+    <div class="phone-wrap reveal" id="phoneWrap">
+      <div class="phone" id="phone" role="region" aria-label="Protótipo do aplicativo Rhapsody">
+        <div class="ph-status" aria-hidden="true"><span>9:41</span><i></i><span>5G</span></div>
+        <div class="ph-body" id="phBody"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 5 GESTOR -->
+<section id="s5" data-nav="Gestor">
+  <div class="wrap">
+    <div class="head reveal">
+      <p class="eyebrow">Painel do gestor</p>
+      <h2>Puxar a equipe sem expor ninguém</h2>
+      <p class="lead">O gestor vê o ritmo da equipe, lança o desafio da semana e identifica a competência que pede atenção.</p>
+    </div>
+    <div class="dash reveal">
+      <div class="dash-head">
+        <h3>Equipe Comercial · semana atual</h3>
+        <span class="tag warn">Dados ilustrativos</span>
+      </div>
+      <div class="grid kpis">
+        <div class="kpi"><b>[X]</b><span>RUNs na semana</span></div>
+        <div class="kpi"><b>[X%]</b><span>Participação da equipe</span></div>
+        <div class="kpi"><b>[X]</b><span>Streaks ativas</span></div>
+        <div class="kpi"><b>[X]</b><span>Parcours concluídos</span></div>
+      </div>
+      <div class="grid dash-grid">
+        <form class="panel darkp" id="chForm">
+          <h4>Lançar desafio da semana</h4>
+          <p>O desafio aparece na home de cada colaborador. Teste: ele muda o cartão do protótipo acima.</p>
+          <div class="field"><label for="fUse">Use Case</label>
+            <select id="fUse"><option>Quebrar a objeção de preço</option><option>Abrir a conversa de proteção familiar</option><option>Retomar um cliente que sumiu</option></select></div>
+          <div class="field"><label for="fLvl">Nível</label>
+            <select id="fLvl"><option>Bronze</option><option selected>Prata</option><option>Ouro</option></select></div>
+          <div class="field"><label for="fDate">Prazo</label><input type="date" id="fDate"></div>
+          <button class="btn light" type="submit" style="width:100%">Lançar desafio</button>
+          <p class="toast" id="chToast" role="status"></p>
+        </form>
+        <div class="panel">
+          <h4>Ranking por equipe</h4>
+          <p>Pontos somados por equipe. Nenhum resultado individual é exibido.</p>
+          <div class="hbar"><span>Equipe Paulista</span><div class="track"><i data-w="88"></i></div><span class="v">[X] pts</span></div>
+          <div class="hbar"><span>Equipe Centro</span><div class="track"><i data-w="74"></i></div><span class="v">[X] pts</span></div>
+          <div class="hbar"><span>Equipe Sul</span><div class="track"><i data-w="61"></i></div><span class="v">[X] pts</span></div>
+          <div class="hbar"><span>Equipe Campinas</span><div class="track"><i data-w="47"></i></div><span class="v">[X] pts</span></div>
+          <p class="note">Comprimento das barras apenas ilustrativo.</p>
+        </div>
+        <div class="panel">
+          <h4>Mapa de competências da equipe</h4>
+          <p>Média da equipe por competência avaliada nos RUNs.</p>
+          <div class="hbar"><span>Escuta</span><div class="track"><i data-w="72"></i></div><span class="v">[X%]</span></div>
+          <div class="hbar"><span>Objeções</span><div class="track"><i data-w="60"></i></div><span class="v">[X%]</span></div>
+          <div class="hbar"><span>Produto</span><div class="track"><i data-w="80"></i></div><span class="v">[X%]</span></div>
+          <div class="hbar"><span>Assertividade</span><div class="track"><i class="att" data-w="42"></i></div><span class="v">[X%]</span></div>
+          <div class="hbar"><span>Empatia</span><div class="track"><i data-w="76"></i></div><span class="v">[X%]</span></div>
+          <p style="margin:14px 0 0"><span class="tag warn">Ponto de atenção</span> <span class="sm muted">Assertividade: sugerir o Use Case "Pedir o fechamento" como próximo desafio.</span></p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 6 MECÂNICAS -->
+<section id="s6" data-nav="Mecânicas">
+  <div class="wrap">
+    <div class="head reveal">
+      <p class="eyebrow">Mecânicas de gamificação</p>
+      <h2>Sete mecânicas, cada uma com um motivo</h2>
+      <p class="lead">Escolhidas para um contexto corporativo: reforçam prática e progresso, sem transformar o treinamento em jogo.</p>
+    </div>
+    <div class="grid g7">
+      <article class="card mech reveal"><div class="icbox"><span data-ic="layers"></span></div><h3>Níveis de persona</h3><dl><div><dt>O que é</dt><dd>A mesma persona em Bronze, Prata e Ouro, com objeções e humores mais difíceis a cada nível.</dd></div><div><dt>Por que funciona em B2B</dt><dd>Atende ao pedido dos pilotos e dá ao RH uma progressão clara por Use Case.</dd></div></dl></article>
+      <article class="card mech reveal"><div class="icbox"><span data-ic="radar"></span></div><h3>Mapa de competências</h3><dl><div><dt>O que é</dt><dd>Radar de cinco competências que compara o início do mês com hoje.</dd></div><div><dt>Por que funciona em B2B</dt><dd>Mostra evolução na linguagem do RH e alimenta o plano de desenvolvimento.</dd></div></dl></article>
+      <article class="card mech reveal"><div class="icbox" style="background:var(--orl);color:var(--or)"><span data-ic="flame"></span></div><h3>Streaks semanais</h3><dl><div><dt>O que é</dt><dd>Sequência de semanas com pelo menos um RUN concluído.</dd></div><div><dt>Por que funciona em B2B</dt><dd>O ritmo semanal cabe na rotina de trabalho. Metas diárias geram culpa e abandono.</dd></div></dl></article>
+      <article class="card mech reveal"><div class="icbox"><span data-ic="target"></span></div><h3>Desafio do gestor</h3><dl><div><dt>O que é</dt><dd>O gestor lança um Use Case da semana, com nível e prazo.</dd></div><div><dt>Por que funciona em B2B</dt><dd>O engajamento vem da liderança direta, e não de notificações do aplicativo.</dd></div></dl></article>
+      <article class="card mech reveal"><div class="icbox"><span data-ic="play"></span></div><h3>Replay do melhor momento</h3><dl><div><dt>O que é</dt><dd>O debriefing destaca a melhor frase do colaborador no RUN.</dd></div><div><dt>Por que funciona em B2B</dt><dd>Reforço positivo e concreto. O colaborador sai sabendo o que repetir com o cliente real.</dd></div></dl></article>
+      <article class="card mech reveal"><div class="icbox"><span data-ic="users"></span></div><h3>Ranking por equipe</h3><dl><div><dt>O que é</dt><dd>Pontos somados por equipe, sem lista individual.</dd></div><div><dt>Por que funciona em B2B</dt><dd>Cria competição saudável sem expor quem está começando.</dd></div></dl></article>
+      <article class="card mech reveal"><div class="icbox"><span data-ic="award"></span></div><h3>Certificação compartilhável</h3><dl><div><dt>O que é</dt><dd>Ao concluir um Parcours, um certificado que pode ser publicado no LinkedIn.</dd></div><div><dt>Por que funciona em B2B</dt><dd>Reconhecimento público para o colaborador e visibilidade para a marca empregadora do cliente.</dd></div></dl></article>
+    </div>
+  </div>
+</section>
+
+<!-- 7 CLIENTES -->
+<section id="s7" data-nav="Clientes">
+  <div class="wrap">
+    <div class="head reveal">
+      <p class="eyebrow">Adaptação por cliente</p>
+      <h2>A mesma base, três contextos</h2>
+      <p class="lead">As mecânicas são as mesmas. Mudam a ênfase, o vocabulário e o formato da sessão.</p>
+    </div>
+    <div class="grid g3">
+      <article class="card cli reveal"><div class="icbox"><span data-ic="shield"></span></div><p class="sub">Seguros · MetLife</p><h3>Competição por equipes e objeções em camadas</h3><ul><li><span data-ic="check" data-sz="16"></span>Ranking entre equipes comerciais, na cultura de metas que os corretores já conhecem.</li><li><span data-ic="check" data-sz="16"></span>Cada nível acrescenta uma camada de objeção: preço, confiança, urgência.</li><li><span data-ic="check" data-sz="16"></span>Desafio da semana ligado ao produto em campanha.</li></ul></article>
+      <article class="card cli reveal"><div class="icbox"><span data-ic="bell"></span></div><p class="sub">Hotelaria · Fairmont</p><h3>"Hóspede encantado" e cenários surpresa</h3><ul><li><span data-ic="check" data-sz="16"></span>A nota vira um indicador de encantamento do hóspede, e não de venda.</li><li><span data-ic="check" data-sz="16"></span>Cenários surpresa: o colaborador não sabe qual situação vai encontrar.</li><li><span data-ic="check" data-sz="16"></span>Humor da persona como elemento central: recuperar um hóspede irritado.</li></ul></article>
+      <article class="card cli reveal"><div class="icbox"><span data-ic="factory"></span></div><p class="sub">Indústria · chão de fábrica</p><h3>Mobile, voz e pouca leitura</h3><ul><li><span data-ic="check" data-sz="16"></span>Sessões de 3 a 5 minutos, feitas no celular.</li><li><span data-ic="check" data-sz="16"></span>Interação por voz do início ao fim, com debriefing falado e ícones.</li><li><span data-ic="check" data-sz="16"></span>Streak por turno ou por equipe de linha.</li></ul></article>
+    </div>
+  </div>
+</section>
+
+<!-- 8 MÉTRICAS -->
+<section id="s8" data-nav="Métricas">
+  <div class="wrap">
+    <div class="head reveal">
+      <p class="eyebrow">Impacto e métricas</p>
+      <h2>O que passa a ser mensurável</h2>
+      <p class="lead">Os valores abaixo são espaços reservados. A linha de base será medida na Fase 1, antes de qualquer mecânica de gamificação entrar no ar.</p>
+    </div>
+    <div class="grid g4">
+      <article class="card metric reveal"><b>[X]</b><h3>RUNs por usuário por semana</h3><p>Frequência de prática. É o indicador principal de hábito.</p></article>
+      <article class="card metric reveal"><b>[X%]</b><h3>Taxa de conclusão de Parcours</h3><p>Quantos colaboradores chegam ao fim da trilha proposta.</p></article>
+      <article class="card metric reveal"><b>[X%]</b><h3>Retenção de streak</h3><p>Parcela dos usuários que mantém a sequência por quatro semanas ou mais.</p></article>
+      <article class="card metric reveal"><b>[X]</b><h3>Evolução no radar</h3><p>Variação por competência entre o início e o fim do período.</p></article>
+    </div>
+    <p class="src reveal">Nenhum número desta página é um resultado medido. Todos os [X] serão preenchidos com dados do piloto.</p>
+  </div>
+</section>
+
+<!-- 9 ROADMAP -->
+<section id="s9" data-nav="Roadmap">
+  <div class="wrap">
+    <div class="head reveal">
+      <p class="eyebrow">Roadmap</p>
+      <h2>Três fases, nesta ordem</h2>
+    </div>
+    <div class="road">
+      <article class="card phase reveal"><span class="tag">Fase 1</span><h3 style="margin-top:12px">Corrigir a UX</h3><ul><li>Voz mais natural e latência disfarçada</li><li>Persona estável até o fim do debriefing</li><li>Debriefing em blocos</li><li>Login e estabilidade do app</li></ul><p class="exit">Critério de saída: [X] RUNs concluídos sem interrupção.</p></article>
+      <article class="card phase reveal"><span class="tag">Fase 2</span><h3 style="margin-top:12px">Gamificação pessoal</h3><ul><li>Níveis Bronze, Prata e Ouro</li><li>XP e streak semanal</li><li>Radar de competências</li><li>Replay do melhor momento</li></ul><p class="exit">Critério de saída: [X] RUNs por usuário por semana.</p></article>
+      <article class="card phase reveal"><span class="tag">Fase 3</span><h3 style="margin-top:12px">Camada social e gestor</h3><ul><li>Desafio da semana</li><li>Ranking por equipe</li><li>Painel do gestor</li><li>Certificação compartilhável</li></ul><p class="exit">Critério de saída: [X%] de participação nos desafios.</p></article>
+    </div>
+  </div>
+</section>
+
+<!-- 10 ENCERRAMENTO -->
+<section id="s10" class="end" data-nav="Próximo passo">
+  <div class="wrap">
+    <div class="reveal">
+      <p class="eyebrow">Próxima fase do piloto</p>
+      <h2>Vamos validar a Fase 1 com uma equipe piloto</h2>
+      <p class="lead">A proposta é começar pequeno: uma equipe, um Use Case, a experiência corrigida e a linha de base medida. A gamificação entra quando o RUN já funciona sem atrito.</p>
+      <ul class="end-list">
+        <li><b>1. Escolher a equipe</b>Uma equipe e um gestor patrocinador em cada cliente piloto.</li>
+        <li><b>2. Medir a linha de base</b>RUNs por usuário por semana e taxa de conclusão, antes das mecânicas.</li>
+        <li><b>3. Ligar a Fase 2</b>Níveis, streak e radar para a mesma equipe, com comparação direta.</li>
+      </ul>
+      <div class="cover-cta">
+        <a class="btn" href="#s4">Rever o protótipo</a>
+        <a class="btn ghost" href="#s9" style="color:#fff;border-color:#4A4163">Rever o roadmap</a>
+      </div>
+      <p class="sm" style="margin-top:36px;color:#D9D3EA">Rhapsody · rhapsody.run</p>
+    </div>
+  </div>
+</section>
+</main>
+
+<script>
+(function(){
+'use strict';
+document.documentElement.classList.add('js');
+const $=(s,r=document)=>r.querySelector(s), $$=(s,r=document)=>Array.from(r.querySelectorAll(s));
+const reduce=window.matchMedia&&matchMedia('(prefers-reduced-motion: reduce)').matches;
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+
+/* ---------- ÍCONES ---------- */
+const ICONS={
+ clock:'<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+ swap:'<path d="M7 4 3 8l4 4M3 8h14M17 12l4 4-4 4M21 16H7"/>',
+ text:'<path d="M4 6h16M4 10h16M4 14h10M4 18h13"/>',
+ layers:'<path d="M12 3 3 8l9 5 9-5-9-5zM3 12l9 5 9-5M3 16l9 5 9-5"/>',
+ alert:'<path d="M12 4 2.5 20h19L12 4zM12 10v4.5M12 17.4v.2"/>',
+ lock:'<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+ flame:'<path d="M12 3c.6 3.4 4.5 5.2 4.5 9.5a4.5 4.5 0 0 1-9 0c0-1.7.7-2.9 1.7-3.9.3 1.3 1 2 1.6 2.3C10.5 8.300 11.300 5.500 12 3z"/>',
+ check:'<path d="M5 12.500l4.500 4.500L19 7.500"/>',
+ mic:'<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+ vol:'<path d="M4 9v6h4l5 4V5L8 9H4zM16 9a4 4 0 0 1 0 6M18.500 6.500a8 8 0 0 1 0 11"/>',
+ voloff:'<path d="M4 9v6h4l5 4V5L8 9H4zM17 9.500l5 5M22 9.500l-5 5"/>',
+ replay:'<path d="M4 12a8 8 0 1 0 2.600-5.900M4 4v5h5"/>',
+ back:'<path d="M15 5l-7 7 7 7"/>',
+ radar:'<path d="M12 3l8.500 6.200-3.200 10H6.700L3.500 9.200 12 3zM12 8l3.800 2.800-1.400 4.400H9.600l-1.400-4.400L12 8z"/>',
+ target:'<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>',
+ users:'<circle cx="9" cy="8" r="3.500"/><path d="M2.500 20a6.500 6.500 0 0 1 13 0"/><circle cx="17.500" cy="9" r="2.500"/><path d="M17.500 14.500a5 5 0 0 1 4 5.500"/>',
+ award:'<circle cx="12" cy="9" r="6"/><path d="M8.500 14 7 22l5-3 5 3-1.500-8"/>',
+ play:'<path d="M8 5l11 7-11 7V5z"/>',
+ expand:'<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/>',
+ shield:'<path d="M12 3l8 3v6c0 4.500-3.200 8-8 9-4.800-1-8-4.500-8-9V6l8-3z"/>',
+ bell:'<path d="M3 19h18M5 19a7 7 0 0 1 14 0M12 12V9M10 9h4"/>',
+ factory:'<path d="M3 21V10l6 4v-4l6 4V5h4v16H3z"/>',
+ up:'<path d="M12 19V5M6 11l6-6 6 6"/>',
+ bulb:'<path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-3.500 10.900c.500.400.500 1 .500 1.600h6c0-.600 0-1.200.500-1.600A6 6 0 0 0 12 3z"/>',
+ quote:'<path d="M5 17c2 0 3.500-1.500 3.500-4V7H4v5h3M14 17c2 0 3.500-1.500 3.500-4V7H13v5h3"/>'
+};
+const ic=(n,sz=20)=>`<svg class="ic" width="${sz}" height="${sz}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${ICONS[n]||''}</svg>`;
+$$('[data-ic]').forEach(e=>{e.outerHTML=ic(e.dataset.ic,+(e.dataset.sz||22))});
+
+/* ---------- ESTADO DO PROTÓTIPO ---------- */
+const COMP=['Escuta','Objeções','Produto','Assertividade','Empatia'];
+const MOODS={
+ desconfiado:{label:'Desconfiado',pitch:.75,rate:1},
+ hesitante:{label:'Hesitante',pitch:.95,rate:.85},
+ aberto:{label:'Aberto',pitch:1.05,rate:1},
+ irritado:{label:'Irritado',pitch:.6,rate:1.2}
+};
+const OPEN='Olha, vou ser direto com você: recebi uma proposta de outra seguradora com a parcela bem mais baixa. Por que eu pagaria mais para fechar com você?';
+const RUN=[
+ {good:'Faz sentido comparar, Ricardo. Antes de falar de preço, posso te fazer uma pergunta? O que essa outra proposta cobre, exatamente, e por quanto tempo?',
+  weak:'Nosso preço é justo, Ricardo. Somos uma das maiores seguradoras do mundo, e qualidade tem um custo.',
+  rGood:'Para ser sincero, eu olhei mais o valor da parcela. Acho que cobre morte e pouca coisa além disso. Mas seguro de vida é tudo igual, não é?',
+  rWeak:'Isso todo corretor fala. No fim do mês, o que pesa é a parcela. E seguro de vida é tudo igual, não é?',
+  keys:['pergunta','o que cobre','cobre','cobertura','comparar','quanto tempo'],
+  strong:'Respondeu à comparação de preço com uma pergunta, em vez de defender a tabela.',
+  fix:'Quando o cliente citar a concorrência, pergunte o que a outra proposta cobre antes de falar do seu preço.'},
+ {good:'Entendo essa impressão. Me conta uma coisa: hoje, quem depende da sua renda? Se você precisasse ficar seis meses afastado da empresa, como ficariam as contas de casa e do negócio?',
+  weak:'Não é igual, não. O nosso tem muito mais coberturas. Posso te mandar a tabela completa por e-mail.',
+  rGood:'Minha esposa e meus dois filhos. E a empresa depende de mim. Nunca tinha pensado em afastamento, só em morte. Mesmo assim, não queria aumentar meu custo fixo agora.',
+  rWeak:'Tabela eu já recebi de três corretores. E, olha, eu não quero aumentar meu custo fixo agora.',
+  keys:['quem depende','depende','familia','renda','afastado','afastamento','filhos'],
+  strong:'Trouxe a conversa para quem depende da renda do cliente.',
+  fix:'Em vez de enviar a tabela, pergunte quem depende da renda dele. O valor do seguro aparece na resposta.'},
+ {good:'É justo. Que tal a gente simular duas opções agora? Uma com a mesma parcela da outra proposta, para você comparar o que cada uma cobre, e outra com proteção de renda em caso de afastamento. Você decide com os números na frente.',
+  weak:'Se eu conseguir dez por cento de desconto com o meu gerente, a gente fecha hoje?',
+  rGood:'Assim fica mais fácil de comparar. Pode me mandar as duas simulações. Se fizer sentido, a gente fecha ainda esta semana.',
+  rWeak:'Se dá para baixar agora, é porque o preço estava alto antes. Vou pensar e te retorno.',
+  keys:['simular','simulacao','simulacoes','duas opcoes','opcoes','comparar','protecao'],
+  strong:'Propôs simular opções lado a lado, sem ceder desconto.',
+  fix:'Evite abrir com desconto. Proponha simular duas opções e deixe o cliente comparar.'}
+];
+const fresh=()=>({screen:'home',xp:340,level:4,streak:6,gold:false,passed:false,
+  radar0:[55,40,62,48,66],radar:[62,52,66,55,70],voiceOn:true,
+  challenge:{use:'Quebrar a objeção de preço',lvl:'Prata',due:'sexta-feira'},run:null});
+let S=fresh(), runId=0, busy=false;
+const body=$('#phBody');
+
+/* ---------- VOZ ---------- */
+const synth=('speechSynthesis' in window && 'SpeechSynthesisUtterance' in window)?window.speechSynthesis:null;
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition||null;
+let voices={p:null,u:null,same:true};
+function pickVoices(){
+  if(!synth)return;
+  let all=[];try{all=synth.getVoices()||[]}catch(e){}
+  let pool=all.filter(v=>/^pt[-_]BR/i.test(v.lang));
+  if(!pool.length)pool=all.filter(v=>/^pt/i.test(v.lang));
+  if(!pool.length){voices={p:null,u:null,same:true};return}
+  const fem=/luciana|francisca|maria|fernanda|let[ií]cia|thalita|brenda|elza|giovanna|leila|manuela|yara|female|femin|flo\b|sandy|shelley|grandma/i;
+  const mal=/daniel|felipe|ricardo|ant[oô]nio|f[aá]bio|j[uú]lio|humberto|val[eé]rio|donato|nicolau|\bmale|mascul|reed|eddy|rocko|grandpa/i;
+  const p0=pool.find(v=>!fem.test(v.name)&&mal.test(v.name))||pool[0];
+  const u0=pool.find(v=>v!==p0&&fem.test(v.name))||pool.find(v=>v!==p0)||pool[0];
+  const find=k=>k&&pool.find(v=>v.voiceURI===k||v.name===k);
+  const p=find(sel.p)||p0, u=find(sel.u)||u0;
+  voices={p,u,same:p===u};
+  fillPicker(pool,p0,u0);
+}
+/* seletor de vozes (escolha salva em localStorage, com try/catch) */
+const sel={p:'',u:''};
+try{sel.p=localStorage.getItem('rh_vp')||'';sel.u=localStorage.getItem('rh_vu')||''}catch(e){}
+function fillPicker(pool,p0,u0){
+  const sp=$('#vsP'),su=$('#vsU');if(!sp||!su)return;
+  const opts=auto=>`<option value="">Automática (${auto.name})</option>`+pool.map(v=>`<option value="${v.voiceURI}">${v.name} (${v.lang})</option>`).join('');
+  sp.innerHTML=opts(p0);su.innerHTML=opts(u0);
+  const has=k=>pool.some(v=>v.voiceURI===k||v.name===k);
+  sp.value=has(sel.p)?(pool.find(v=>v.voiceURI===sel.p||v.name===sel.p).voiceURI):'';
+  su.value=has(sel.u)?(pool.find(v=>v.voiceURI===sel.u||v.name===sel.u).voiceURI):'';
+}
+function testVoice(who){
+  if(!synth)return;
+  try{synth.cancel();
+    const u=new SpeechSynthesisUtterance(who==='p'?'Olha, vou ser direto com você. Por que eu pagaria mais para fechar com você?':'Faz sentido comparar. Posso te fazer uma pergunta?');
+    u.lang='pt-BR';if(voices[who])u.voice=voices[who];
+    u.pitch=who==='p'?MOODS.desconfiado.pitch:(voices.same?1.5:1.1);u.rate=who==='p'?1:1.05;
+    synth.speak(u)}catch(e){}
+}
+function initPicker(){
+  const sp=$('#vsP'),su=$('#vsU');if(!sp||!su)return;
+  if(!synth){$('#vpick').hidden=true;return}
+  sp.addEventListener('change',()=>{sel.p=sp.value;try{localStorage.setItem('rh_vp',sel.p)}catch(e){}pickVoices();testVoice('p')});
+  su.addEventListener('change',()=>{sel.u=su.value;try{localStorage.setItem('rh_vu',sel.u)}catch(e){}pickVoices();testVoice('u')});
+  $('#vtP').addEventListener('click',()=>testVoice('p'));
+  $('#vtU').addEventListener('click',()=>testVoice('u'));
+}
+if(synth){initPicker();pickVoices();try{synth.addEventListener('voiceschanged',pickVoices)}catch(e){synth.onvoiceschanged=pickVoices}}
+function stopVoice(){if(synth){try{synth.cancel()}catch(e){}}}
+function speak(text,who,mood){
+  return new Promise(res=>{
+    if(!synth||!S.voiceOn){setTimeout(res,who==='p'?Math.min(2400,700+text.length*12):450);return}
+    try{
+      synth.cancel();
+      const u=new SpeechSynthesisUtterance(text);u.lang='pt-BR';
+      if(voices[who])u.voice=voices[who];
+      if(who==='p'){const m=MOODS[mood]||MOODS.desconfiado;u.pitch=m.pitch;u.rate=m.rate}
+      else{u.pitch=voices.same?1.5:1.1;u.rate=1.05}
+      let done=false;const fin=()=>{if(done)return;done=true;clearTimeout(t);res()};
+      const t=setTimeout(fin,4000+text.length*110);
+      u.onend=fin;u.onerror=fin;synth.speak(u);
+    }catch(e){res()}
+  });
+}
+$('#voiceNote').textContent=synth?'Ative o som: Ricardo fala durante o RUN.':'Este navegador não tem síntese de voz. O protótipo segue sem áudio.';
+
+/* ---------- COMPONENTES ---------- */
+function radarSVG(a,b){
+  const cx=160,cy=124,R=80,n=5;
+  const pt=(i,v)=>{const g=-Math.PI/2+i*2*Math.PI/n;return[cx+Math.cos(g)*R*v/100,cy+Math.sin(g)*R*v/100]};
+  const poly=vs=>vs.map((v,i)=>pt(i,v).map(x=>x.toFixed(1)).join(',')).join(' ');
+  let g='';
+  [25,50,75,100].forEach(l=>{g+=`<polygon points="${poly([l,l,l,l,l])}" fill="none" stroke="#E4DEF3" stroke-width="1"/>`});
+  for(let i=0;i<n;i++){const[x,y]=pt(i,100);g+=`<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" stroke="#E4DEF3"/>`;
+    const[lx,ly]=pt(i,122);const anc=lx>cx+6?'start':lx<cx-6?'end':'middle';
+    g+=`<text x="${lx.toFixed(1)}" y="${(ly+4).toFixed(1)}" text-anchor="${anc}">${COMP[i]}</text>`}
+  g+=`<polygon points="${poly(a)}" fill="none" stroke="#8E86A6" stroke-width="1.5" stroke-dasharray="4 4"/>`;
+  g+=`<polygon points="${poly(b)}" fill="rgba(107,63,212,.2)" stroke="#6B3FD4" stroke-width="2.5" stroke-linejoin="round"/>`;
+  b.forEach((v,i)=>{const[x,y]=pt(i,v);g+=`<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.5" fill="#6B3FD4"/>`});
+  const desc=COMP.map((c,i)=>`${c}: de ${a[i]} para ${b[i]}`).join('; ');
+  return `<svg class="radar" viewBox="0 0 320 240" width="100%" role="img" aria-label="Radar de competências. ${desc}.">${g}</svg>`;
+}
+const moodBadge=m=>`<span class="mood m-${m}" id="moodBadge">${MOODS[m].label}</span>`;
+
+/* ---------- TELAS ---------- */
+function homeHTML(){
+  const c=S.challenge;
+  return `
+  <div class="h-top"><div><p class="muted sm">Bom dia,</p><h3>Camila</h3></div>
+    <div class="streak" aria-label="Streak de ${S.streak} semanas">${ic('flame',16)} ${S.streak} semanas</div></div>
+  <div class="pcard"><div class="xp-row"><span>Nível ${S.level}</span><span>${S.xp} / 500 XP</span></div>
+    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="500" aria-valuenow="${S.xp}" aria-label="XP do nível"><i style="width:${S.xp/5}%"></i></div></div>
+  <div class="dark"><span class="k">Desafio da semana · enviado pelo gestor</span>
+    <h3>${c.use}</h3><p>Nível ${c.lvl} · até ${c.due} · conta pontos para a equipe</p>
+    <button class="pbtn" data-act="prerun">Aceitar desafio</button></div>
+  <h4>Quebrar a objeção de preço</h4>
+  <ul class="levels">
+    <li class="lv"><span class="medal b">${ic('check',16)}</span><div><strong>Bronze</strong><small>Ricardo cordial</small></div><span class="st done">Concluído</span></li>
+    <li><button class="lv cur" data-act="prerun"><span class="medal s">${S.passed?ic('check',16):ic('play',14)}</span><div><strong>Prata</strong><small>Ricardo desconfiado</small></div><span class="st ${S.passed?'done':''}">${S.passed?'Concluído · repetir':'Atual · fazer RUN'}</span></button></li>
+    <li class="lv ${S.gold?'':'locked'}"><span class="medal g">${S.gold?ic('award',16):ic('lock',16)}</span><div><strong>Ouro</strong><small>${S.gold?'Ricardo com pressa e duas propostas':'Nota 70 ou mais no Prata'}</small></div><span class="st">${S.gold?'Desbloqueado':'Bloqueado'}</span></li>
+  </ul>
+  <h4>Suas competências</h4>
+  <div class="pcard" style="padding:10px 8px 14px">${radarSVG(S.radar0,S.radar)}
+    <div class="legend"><span><i></i>Início do mês</span><span><i class="now"></i>Hoje</span></div></div>`;
+}
+function prerunHTML(){
+  return `
+  <div class="topbar"><button class="pic" data-act="home" aria-label="Voltar para a home">${ic('back')}</button><span class="t">Antes do RUN</span><span class="tag">Prata</span></div>
+  <div class="stack">
+    <div class="pcard"><div class="persona"><span class="ava">RM</span><div><h3 style="font-size:1.0625rem">Ricardo Mendes, 42</h3><p class="sm muted">Empresário</p></div></div>
+      <p class="sm" style="margin:12px 0">Recebeu uma proposta mais barata da concorrência e quer entender por que deveria fechar com você.</p>
+      <p class="lbl">Humor inicial</p><span class="mood m-desconfiado">Desconfiado</span></div>
+    <div class="pcard"><p class="lbl">Objetivo do RUN</p><p class="sm">Fazer Ricardo aceitar comparar coberturas, e não apenas o valor da parcela.</p></div>
+    <div class="pcard"><p class="lbl">O que será avaliado</p><div class="chips"><span class="chip">Escuta ativa</span><span class="chip">Tratamento de objeções</span><span class="chip">Conhecimento do produto</span></div></div>
+    <div class="tip">${ic('bulb',18)}<span><strong>Dica:</strong> faça perguntas antes de defender o preço. São 3 objeções, cerca de 3 minutos.</span></div>
+    <button class="pbtn" data-act="start">Começar RUN</button>
+  </div>`;
+}
+function runHTML(){
+  return `
+  <div class="run-head">
+    <button class="pic" data-act="home" aria-label="Sair do RUN e voltar para a home">${ic('back')}</button>
+    <span class="ava sm" aria-hidden="true">RM</span>
+    <div class="who"><strong>Ricardo Mendes</strong>${moodBadge('desconfiado')}</div>
+    <button class="pic" data-act="replay" aria-label="Ouvir de novo a última fala de Ricardo">${ic('replay')}</button>
+    <button class="pic" data-act="voice" id="voiceBtn" aria-pressed="${S.voiceOn}" aria-label="Voz ligada ou desligada">${ic(S.voiceOn?'vol':'voloff')}</button>
+  </div>
+  <div class="stepbar" id="stepbar"><i></i><i></i><i></i><span id="stepLbl">Objeção 1 de 3</span></div>
+  <div class="msgs" id="msgs" aria-live="polite"></div>
+  <div class="status" id="status" role="status"></div>
+  <div class="choices" id="choices"></div>`;
+}
+function setStatus(k){
+  const el=$('#status',body);if(!el)return;
+  el.innerHTML={
+    speak:`<span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>Falando…`,
+    listen:`${ic('mic',14)}Ricardo está ouvindo…`,
+    think:`Ricardo está pensando<span class="dots" aria-hidden="true"><i></i><i></i><i></i></span>`,
+    turn:`Sua vez: escolha uma resposta${SR?' ou fale':''}.`,
+    rec:`<span class="wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>Pode falar, estou ouvindo você…`,
+    nohear:`Não consegui ouvir. Escolha uma das respostas.`,
+    end:`RUN concluído.`
+  }[k]||'';
+}
+function addMsg(who,text){
+  const m=$('#msgs',body);if(!m)return;
+  const d=document.createElement('div');d.className='msg '+who;
+  d.innerHTML=`<span class="sm" style="position:absolute;left:-9999px">${who==='p'?'Ricardo: ':'Você: '}</span>`;
+  d.appendChild(document.createTextNode(text));m.appendChild(d);m.scrollTop=m.scrollHeight;
+}
+function updateRunUI(){
+  const r=S.run,b=$('#moodBadge',body);
+  if(b){b.className='mood m-'+r.mood;b.textContent=MOODS[r.mood].label}
+  $$('#stepbar i',body).forEach((e,i)=>e.classList.toggle('on',i<r.step));
+  const l=$('#stepLbl',body);if(l)l.textContent=r.step<3?`Objeção ${r.step+1} de 3`:'3 de 3 concluídas';
+}
+function showChoices(){
+  const r=S.run,st=RUN[r.step],c=$('#choices',body);if(!c)return;
+  const opts=[{g:1,t:st.good},{g:0,t:st.weak}];if(Math.random()<.5)opts.reverse();
+  c.innerHTML=opts.map(o=>`<button class="choice" data-act="choice" data-g="${o.g}">${o.t}</button>`).join('')+
+    (SR?`<div class="microw"><button class="pic" data-act="mic" id="micBtn" aria-label="Responder falando">${ic('mic')}</button><span>Ou responda falando, com as suas palavras.</span></div>`:'');
+  setStatus('turn');busy=false;
+}
+async function startRun(){
+  const id=++runId;busy=true;
+  S.run={step:0,good:0,mood:'desconfiado',answers:[],last:OPEN,done:false};
+  render('run');
+  setStatus('think');await wait(1000);if(id!==runId)return;
+  addMsg('p',OPEN);setStatus('speak');await speak(OPEN,'p','desconfiado');if(id!==runId)return;
+  showChoices();
+}
+async function answer(good,text){
+  if(busy)return;busy=true;const id=runId,r=S.run,st=RUN[r.step];
+  $('#choices',body).innerHTML='';
+  addMsg('u',text);r.answers.push({good,text,step:r.step});
+  setStatus('listen');await speak(text,'u');if(id!==runId)return;
+  if(good)r.good++;
+  r.mood=good?(r.good>=2?'aberto':'hesitante'):'irritado';
+  r.step++;updateRunUI();
+  setStatus('think');await wait(1100);if(id!==runId)return;
+  const line=good?st.rGood:st.rWeak;r.last=line;
+  addMsg('p',line);setStatus('speak');await speak(line,'p',r.mood);if(id!==runId)return;
+  if(r.step<3)showChoices();
+  else{setStatus('end');$('#choices',body).innerHTML=`<button class="pbtn" data-act="debrief">Ver debriefing</button>`;busy=false}
+}
+const norm=s=>s.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g,'');
+function listen(){
+  if(!SR||busy)return;const id=runId,st=RUN[S.run.step],btn=$('#micBtn',body);
+  let got=false,rec;
+  try{rec=new SR()}catch(e){return}
+  stopVoice();rec.lang='pt-BR';rec.interimResults=false;rec.maxAlternatives=1;
+  if(btn)btn.classList.add('rec');setStatus('rec');
+  rec.onresult=e=>{got=true;const t=(e.results[0][0].transcript||'').trim();if(id!==runId||!t)return;
+    const n=norm(t);const ok=st.keys.some(k=>n.includes(k));
+    answer(ok,t.charAt(0).toUpperCase()+t.slice(1))};
+  const fail=()=>{if(id!==runId)return;if(btn)btn.classList.remove('rec');if(!got&&!busy)setStatus('nohear')};
+  rec.onerror=fail;rec.onend=fail;
+  try{rec.start()}catch(e){fail()}
+}
+function commit(){
+  const r=S.run;if(!r||r.done)return;r.done=true;
+  r.score=40+20*r.good;r.gain=40+30*r.good;
+  S.xp+=r.gain;while(S.xp>=500){S.xp-=500;S.level++}
+  if(r.score>=70){S.passed=true;r.first=!S.gold;S.gold=true;
+    const inc=[8,14,4,6,3];S.radar=S.radar.map((v,i)=>Math.min(100,v+inc[i]))}
+}
+function debriefHTML(){
+  commit();const r=S.run,C=2*Math.PI*46;
+  const goods=r.answers.filter(a=>a.good),weak=r.answers.find(a=>!a.good);
+  const strong=goods.length?goods.map(a=>RUN[a.step].strong):['Manteve a conversa até o fim, sem interromper o cliente.'];
+  const fix=weak?RUN[weak.step].fix:'Na próxima, resuma o que ouviu do cliente antes de propor a simulação.';
+  const verdict={100:'Excelente. Você levou a conversa do preço para o valor.',80:'Bom RUN. Objeção contornada, com um ponto a ajustar.',60:'Quase lá. Ricardo ainda não enxergou o valor.',40:'Ricardo saiu da conversa sem mudar de ideia.'}[r.score];
+  const best=goods.length?goods[goods.length>1?1:0]:null;
+  return `
+  <div class="topbar"><span class="t">Debriefing</span>${moodBadge(r.mood).replace(' id="moodBadge"','')}</div>
+  <div class="stack">
+    <div class="pcard ringbox">
+      <div class="ring" role="img" aria-label="Nota ${r.score} de 100"><svg width="112" height="112" viewBox="0 0 112 112"><circle class="tr" cx="56" cy="56" r="46"/><circle class="fg" id="ringFg" cx="56" cy="56" r="46" stroke-dasharray="${C.toFixed(1)}" stroke-dashoffset="${C.toFixed(1)}" data-to="${(C*(1-r.score/100)).toFixed(1)}"/></svg><b>${r.score}</b></div>
+      <div><p style="font-weight:600;font-size:.9375rem">${verdict}</p><span class="xpg">+${r.gain} XP</span></div>
+    </div>
+    <div class="pcard blk"><h5>${ic('check',18)}Pontos fortes</h5><ul>${strong.map(s=>`<li>${ic('check',16)}<span>${s}</span></li>`).join('')}</ul></div>
+    <div class="pcard blk"><h5>${ic('target',18)}Um ponto para o próximo RUN</h5><p>${fix}</p></div>
+    <div class="quote blk"><h5>${ic('quote',18)}Seu melhor momento</h5>${best?`<blockquote>"${best.text}"</blockquote>`:`<blockquote>Ainda não desta vez. No próximo RUN, comece com uma pergunta e este bloco terá uma frase sua.</blockquote>`}</div>
+    <button class="pbtn" data-act="result">Continuar</button>
+  </div>`;
+}
+function resultHTML(){
+  const r=S.run;
+  if(r.score>=70){
+    return `<div class="res">
+      <div class="bigmedal">${ic('award',56)}</div>
+      <h3>Nível Ouro desbloqueado</h3>
+      <p>Nota ${r.score}. ${r.first?'Seus pontos contaram para o desafio da semana, e a sua equipe subiu no ranking.':'Seus pontos contaram de novo para a equipe.'}</p>
+      <div class="rank" aria-label="Ranking por equipe: Equipe Centro subiu do terceiro para o segundo lugar">
+        <div class="row" style="transform:translateY(0)"><b>1</b>Equipe Paulista</div>
+        <div class="row" id="rkB" style="transform:translateY(66px)"><b id="rkBn">2</b>Equipe Sul</div>
+        <div class="row me" id="rkA" style="transform:translateY(132px)"><b id="rkAn">3</b>Equipe Centro (sua)<span class="up">${ic('up',14)}subiu</span></div>
+      </div>
+      <div class="stack"><button class="pbtn" data-act="home">Voltar para a home</button><button class="pbtn sec" data-act="start">Repetir RUN</button></div>
+    </div>`;
+  }
+  return `<div class="res">
+    <div class="bigmedal miss">${ic('lock',52)}</div>
+    <h3>Faltam ${70-r.score} pontos</h3>
+    <p>Nota ${r.score}. O nível Ouro abre com 70 ou mais. Você ganhou +${r.gain} XP por ter praticado, e a streak continua.</p>
+    <div class="stack"><button class="pbtn" data-act="start">Repetir RUN</button><button class="pbtn sec" data-act="home">Voltar para a home</button></div>
+  </div>`;
+}
+function render(screen){
+  S.screen=screen;
+  const html={home:homeHTML,prerun:prerunHTML,run:runHTML,debrief:debriefHTML,result:resultHTML}[screen]();
+  body.innerHTML=`<div class="scr ${screen==='run'?'run':''}">${html}</div>`;
+  if(screen==='debrief'){const f=$('#ringFg',body);requestAnimationFrame(()=>requestAnimationFrame(()=>{if(f)f.style.strokeDashoffset=f.dataset.to}))}
+  if(screen==='result'&&S.run.score>=70){
+    const sw=()=>{const a=$('#rkA',body),b=$('#rkB',body);if(!a)return;a.style.transform='translateY(66px)';b.style.transform='translateY(132px)';$('#rkAn',body).textContent='2';$('#rkBn',body).textContent='3'};
+    reduce?sw():setTimeout(sw,700);
+  }
+}
+function go(screen){runId++;busy=false;stopVoice();render(screen)}
+body.addEventListener('click',e=>{
+  const b=e.target.closest('[data-act]');if(!b)return;
+  const a=b.dataset.act;
+  if(a==='home'||a==='prerun'||a==='debrief'||a==='result')go(a);
+  else if(a==='start'){stopVoice();startRun()}
+  else if(a==='choice')answer(b.dataset.g==='1',b.textContent);
+  else if(a==='mic')listen();
+  else if(a==='voice'){S.voiceOn=!S.voiceOn;if(!S.voiceOn)stopVoice();b.setAttribute('aria-pressed',S.voiceOn);b.innerHTML=ic(S.voiceOn?'vol':'voloff')}
+  else if(a==='replay'){if(busy||!S.run)return;(async()=>{const id=runId;busy=true;const prev=$('#status',body).innerHTML;setStatus('speak');await speak(S.run.last,'p',S.run.mood);if(id!==runId)return;$('#status',body).innerHTML=prev;busy=false})()}
+});
+$('#resetBtn').addEventListener('click',()=>{const v=S.voiceOn;S=fresh();S.voiceOn=v;go('home')});
+window.addEventListener('pagehide',stopVoice);
+
+/* capa: cópia estática da home */
+$('#coverScr').innerHTML=homeHTML();
+render('home');
+
+/* escala do celular */
+function fitPhone(){
+  const s=Math.min(1,(innerWidth-32)/390,Math.max(.85,(innerHeight-100)/844));
+  $('#phone').style.transform=`scale(${s})`;
+  const w=$('#phoneWrap');w.style.width=390*s+'px';w.style.height=844*s+'px';
+}
+fitPhone();addEventListener('resize',fitPhone);
+
+/* ---------- PAINEL DO GESTOR ---------- */
+$('#chForm').addEventListener('submit',e=>{
+  e.preventDefault();
+  const d=$('#fDate').value;let due='sexta-feira';
+  if(d){const p=d.split('-');due=p[2]+'/'+p[1]}
+  S.challenge={use:$('#fUse').value,lvl:$('#fLvl').value,due};
+  if(S.screen==='home')render('home');
+  $('#chToast').textContent=`Desafio lançado (simulação): "${S.challenge.use}", nível ${S.challenge.lvl}, até ${due}. Veja o cartão na home do protótipo.`;
+});
+
+/* ---------- NAVEGAÇÃO, PROGRESSO, ATALHOS ---------- */
+const secs=$$('main > section');
+const links=$('#navLinks');
+secs.forEach(s=>{const li=document.createElement('li');li.innerHTML=`<a href="#${s.id}">${s.dataset.nav}</a>`;links.appendChild(li)});
+const navA=$$('a',links);
+function curIdx(){const y=scrollY+innerHeight*.35;let k=0;secs.forEach((s,i)=>{if(s.offsetTop<=y)k=i});return k}
+function onScroll(){
+  const max=document.documentElement.scrollHeight-innerHeight;
+  $('#progBar').style.width=(max>0?Math.min(100,scrollY/max*100):0)+'%';
+  const k=curIdx();
+  navA.forEach((a,i)=>{a.classList.toggle('on',i===k);if(i===k)a.setAttribute('aria-current','true');else a.removeAttribute('aria-current')});
+  $('#navCount').textContent=String(k+1).padStart(2,'0')+' / '+secs.length;
+}
+addEventListener('scroll',onScroll,{passive:true});onScroll();
+let target=null,tReset;
+function jump(d){
+  const base=target===null?curIdx():target;
+  target=Math.max(0,Math.min(secs.length-1,base+d));
+  scrollTo({top:secs[target].offsetTop,behavior:reduce?'auto':'smooth'});
+  clearTimeout(tReset);tReset=setTimeout(()=>{target=null},900);
+}
+function toggleFS(){
+  const d=document,el=d.documentElement;
+  if(d.fullscreenElement||d.webkitFullscreenElement){(d.exitFullscreen||d.webkitExitFullscreen).call(d)}
+  else{const f=el.requestFullscreen||el.webkitRequestFullscreen;if(f){try{const p=f.call(el);if(p&&p.catch)p.catch(()=>{})}catch(e){}}}
+}
+$('#fsBtn').addEventListener('click',toggleFS);
+addEventListener('keydown',e=>{
+  if(e.ctrlKey||e.metaKey||e.altKey)return;
+  const t=e.target,tag=t&&t.tagName;
+  if(tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA'||(t&&t.isContentEditable))return;
+  if(e.key==='ArrowDown'||e.key==='PageDown'){e.preventDefault();jump(1)}
+  else if(e.key==='ArrowUp'||e.key==='PageUp'){e.preventDefault();jump(-1)}
+  else if(e.key==='f'||e.key==='F'){e.preventDefault();toggleFS()}
+});
+
+/* ---------- ENTRADA DAS SEÇÕES ---------- */
+const fillBars=r=>$$('[data-w]',r).forEach(b=>{b.style.width=b.dataset.w+'%'});
+if('IntersectionObserver' in window&&!reduce){
+  const io=new IntersectionObserver(es=>es.forEach(en=>{if(en.isIntersecting){en.target.classList.add('in');fillBars(en.target);io.unobserve(en.target)}}),{threshold:.12});
+  $$('.reveal').forEach((e,i)=>{e.style.transitionDelay=(i%5)*60+'ms';io.observe(e)});
+}else{$$('.reveal').forEach(e=>e.classList.add('in'));fillBars(document)}
+})();
+</script>
+</body>
+</html>
